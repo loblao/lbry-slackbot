@@ -1,0 +1,4 @@
+slackclient
+json-rpc
+requests
+pyimgur

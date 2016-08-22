@@ -1,0 +1,7 @@
+files/
+*.pyc
+*.pyo
+config.json
+
+lbry/
+lbrycrd/
