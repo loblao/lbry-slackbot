@@ -27,7 +27,8 @@ Usage:
 
 {
     "SLACK_BOT_TOKEN": "xoxb-XXX-XXX",
-    "IMGUR_CLIENT_ID": "xxxxxxxxxxx"
+    "IMGUR_CLIENT_ID": "xxxxxxxxxxx",
+    "DEBUG": true
 }
 
 5 - Leave bot.py running
@@ -54,22 +55,27 @@ if os.path.isfile('config.json'):
         CONFIG = json.loads(f.read())
 
 else:
-    print 'config.json not found'
+    print 'FATAL: config.json not found'
     exit(1)
 
 SLACK_BOT_TOKEN = CONFIG.get('SLACK_BOT_TOKEN')
 if not SLACK_BOT_TOKEN:
-    print 'Required config SLACK_BOT_TOKEN not set in config.json'
+    print 'FATAL: Required config SLACK_BOT_TOKEN not set in config.json'
     exit(1)
 
 IMGUR_CLIENT_ID = CONFIG.get('IMGUR_CLIENT_ID')
 if not IMGUR_CLIENT_ID:
-    print 'Required config IMGUR_CLIENT_ID not set in config.json'
+    print 'FATAL: Required config IMGUR_CLIENT_ID not set in config.json'
     exit(1)
 
 OUTPUT_DIR = CONFIG.get('OUTPUT_DIR', 'files')
 if not os.path.isdir(OUTPUT_DIR):
+    print 'INFO: Creating directory', OUTPUT_DIR
     os.mkdir(OUTPUT_DIR)
+
+DEBUG = CONFIG.get('DEBUG', True)
+if DEBUG:
+    print 'DEBUG: Debug is enabled'
 
 CACHE = {}
 CACHE_TIMEOUT = CONFIG.get('CACHE_TIMEOUT', 3600) # 1 hour
@@ -87,6 +93,8 @@ def handle_msg(msg):
     return urls
 
 def upload_to_imgur(filename, url):
+    if DEBUG:
+        print 'DEBUG: Uploading', filename, 'to imgur'
     uploaded_image = im.upload_image(filename, title=url)
     return uploaded_image.link
 
@@ -99,6 +107,10 @@ def check_url(name):
         name = name[7:]
 
     resolved = api.resolve_name({'name': name})
+    if resolved is None:
+        print 'ERROR: resolve_name returned None for', name
+        return False
+
     if 'fee' in resolved:
         return False
 
@@ -116,19 +128,27 @@ def fetch_url(url):
     if url.startswith('lbry://'):
         url = url[7:]
 
+    if DEBUG:
+        print 'DEBUG: Fetching', url, 'to', OUTPUT_DIR
+
     try:
         result = api.get({'name': url, 'download_directory': OUTPUT_DIR})
         return (True, result['path'])
 
     except Exception as e:
-        print 'Failed to fetch URL', e
+        print 'ERROR: Failed to fetch URL', e
         return (False, None)
 
 def handle_url(url, channel):
+    if DEBUG:
+        print 'DEBUG: Detected', url, 'in channel', channel
+
     if url in CACHE:
         if channel in CACHE[url]:
             elapsed = time.time() - CACHE[url][channel]
             if elapsed < CACHE_TIMEOUT:
+                if DEBUG:
+                    print 'DEBUG: Cached, ignoring...'
                 return
 
     else:
@@ -136,6 +156,8 @@ def handle_url(url, channel):
 
     CACHE[url][channel] = time.time()
     if not check_url(url):
+        if DEBUG:
+            print 'Not a valid url, ignoring...'
         return
 
     success, filename = fetch_url(url)
@@ -145,7 +167,16 @@ def handle_url(url, channel):
                               as_user=True)
 
     else:
+        # Sanity check
+        if not os.path.isfile(filename):
+            print 'WARNING:', filename, 'not found!'
+            print 'WARNING: Check if you have write access to', OUTPUT_DIR
+            return
+
         link = upload_to_imgur(filename, url)
+        if DEBUG:
+            print 'DEBUG: Uploaded to imgur:', link
+
         attachments = [{'image_url': link, 'title': url}]
 
         slack_client.api_call('chat.postMessage', channel=channel,
@@ -156,10 +187,10 @@ slack_client = SlackClient(SLACK_BOT_TOKEN)
 im = pyimgur.Imgur(IMGUR_CLIENT_ID)
 
 if not slack_client.rtm_connect():
-    print 'Failed to connect.'
+    print 'FATAL: Failed to connect.'
     exit(1)
 
-print 'Connected'
+print 'INFO: Connected'
 while True:
     for event in slack_client.rtm_read():
         if event.get('type') == 'message':
