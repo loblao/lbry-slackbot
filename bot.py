@@ -68,7 +68,7 @@ if not IMGUR_CLIENT_ID:
     print 'FATAL: Required config IMGUR_CLIENT_ID not set in config.json'
     exit(1)
 
-OUTPUT_DIR = CONFIG.get('OUTPUT_DIR', 'files')
+OUTPUT_DIR = os.path.abspath(CONFIG.get('OUTPUT_DIR', 'files'))
 if not os.path.isdir(OUTPUT_DIR):
     print 'INFO: Creating directory', OUTPUT_DIR
     os.mkdir(OUTPUT_DIR)
